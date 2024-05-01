@@ -1,5 +1,4 @@
 package org.embulk.input;
 
-public class TestCommandFileInputPlugin
-{
+public class TestCommandFileInputPlugin {
 }
