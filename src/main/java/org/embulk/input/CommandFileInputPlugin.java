@@ -1,5 +1,12 @@
 package org.embulk.input;
 
+import java.io.FilterInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import org.embulk.config.ConfigDiff;
 import org.embulk.config.ConfigException;
 import org.embulk.config.ConfigSource;
@@ -18,20 +25,10 @@ import org.embulk.util.file.InputStreamFileInput;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.io.FilterInputStream;
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.List;
-
 public class CommandFileInputPlugin
-        implements FileInputPlugin
-{
+        implements FileInputPlugin {
     public interface PluginTask
-            extends Task
-    {
+            extends Task {
         @Config("command")
         public String getCommand();
 
@@ -42,23 +39,22 @@ public class CommandFileInputPlugin
     }
 
     public static final List<String> SHELL = Collections.unmodifiableList(Arrays.asList(
-        // TODO use ["PowerShell.exe", "-Command"] on windows?
-        "sh", "-c"
+            // TODO use ["PowerShell.exe", "-Command"] on windows?
+            "sh", "-c"
     ));
 
     @Override
-    public ConfigDiff transaction(ConfigSource config, FileInputPlugin.Control control)
-    {
+    public ConfigDiff transaction(ConfigSource config, FileInputPlugin.Control control) {
         final ConfigMapper configMapper = CONFIG_MAPPER_FACTORY.createConfigMapper();
         final PluginTask task = configMapper.map(config, PluginTask.class);
 
         switch (task.getPipe()) {
-        case "stdout":
-            break;
-        case "stderr":
-            break;
-        default:
-            throw new ConfigException(String.format(
+            case "stdout":
+                break;
+            case "stderr":
+                break;
+            default:
+                throw new ConfigException(String.format(
                         "Unknown 'pipe' option '%s'. It must be either 'stdout' or 'stderr'", task.getPipe()));
         }
 
@@ -67,9 +63,8 @@ public class CommandFileInputPlugin
 
     @Override
     public ConfigDiff resume(TaskSource taskSource,
-            int taskCount,
-            FileInputPlugin.Control control)
-    {
+                             int taskCount,
+                             FileInputPlugin.Control control) {
         control.run(taskSource, taskCount);
 
         return CONFIG_MAPPER_FACTORY.newConfigDiff();
@@ -77,14 +72,13 @@ public class CommandFileInputPlugin
 
     @Override
     public void cleanup(TaskSource taskSource,
-            int taskCount,
-            List<TaskReport> successTaskReports)
-    {
+                        int taskCount,
+                        List<TaskReport> successTaskReports) {
     }
 
+    @SuppressWarnings("MissingSwitchDefault")
     @Override
-    public TransactionalFileInput open(TaskSource taskSource, int taskIndex)
-    {
+    public TransactionalFileInput open(TaskSource taskSource, int taskIndex) {
         final TaskMapper taskMapper = CONFIG_MAPPER_FACTORY.createTaskMapper();
         final PluginTask task = taskMapper.map(taskSource, PluginTask.class);
 
@@ -96,12 +90,12 @@ public class CommandFileInputPlugin
 
         ProcessBuilder builder = new ProcessBuilder(cmdline.toArray(new String[cmdline.size()]));
         switch (task.getPipe()) {
-        case "stdout":
-            builder.redirectError(ProcessBuilder.Redirect.INHERIT);
-            break;
-        case "stderr":
-            builder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
-            break;
+            case "stdout":
+                builder.redirectError(ProcessBuilder.Redirect.INHERIT);
+                break;
+            case "stderr":
+                builder.redirectOutput(ProcessBuilder.Redirect.INHERIT);
+                break;
         }
 
         try {
@@ -110,12 +104,12 @@ public class CommandFileInputPlugin
             InputStream stream = null;
             try {
                 switch (task.getPipe()) {
-                case "stdout":
-                    stream = process.getInputStream();
-                    break;
-                case "stderr":
-                    stream = process.getErrorStream();
-                    break;
+                    case "stdout":
+                        stream = process.getInputStream();
+                        break;
+                    case "stderr":
+                        stream = process.getErrorStream();
+                        break;
                 }
 
                 PluginFileInput input = new PluginFileInput(task, new ProcessWaitInputStream(stream, process));
@@ -133,19 +127,16 @@ public class CommandFileInputPlugin
     }
 
     private static class ProcessWaitInputStream
-            extends FilterInputStream
-    {
+            extends FilterInputStream {
         private Process process;
 
-        public ProcessWaitInputStream(InputStream in, Process process)
-        {
+        public ProcessWaitInputStream(InputStream in, Process process) {
             super(in);
             this.process = process;
         }
 
         @Override
-        public int read() throws IOException
-        {
+        public int read() throws IOException {
             int c = super.read();
             if (c < 0) {
                 waitFor();
@@ -154,8 +145,7 @@ public class CommandFileInputPlugin
         }
 
         @Override
-        public int read(byte[] b) throws IOException
-        {
+        public int read(byte[] b) throws IOException {
             int c = super.read(b);
             if (c < 0) {
                 waitFor();
@@ -164,8 +154,7 @@ public class CommandFileInputPlugin
         }
 
         @Override
-        public int read(byte[] b, int off, int len) throws IOException
-        {
+        public int read(byte[] b, int off, int len) throws IOException {
             int c = super.read(b, off, len);
             if (c < 0) {
                 waitFor();
@@ -174,14 +163,12 @@ public class CommandFileInputPlugin
         }
 
         @Override
-        public void close() throws IOException
-        {
+        public void close() throws IOException {
             super.close();
             waitFor();
         }
 
-        private synchronized void waitFor() throws IOException
-        {
+        private synchronized void waitFor() throws IOException {
             if (process != null) {
                 int code;
                 try {
@@ -192,7 +179,7 @@ public class CommandFileInputPlugin
                 process = null;
                 if (code != 0) {
                     throw new IOException(String.format(
-                                "Command finished with non-zero exit code. Exit code is %d.", code));
+                            "Command finished with non-zero exit code. Exit code is %d.", code));
                 }
             }
         }
@@ -201,22 +188,18 @@ public class CommandFileInputPlugin
     // TODO almost copied from S3FileInputPlugin. include an InputStreamFileInput utility to embulk-core.
     public static class PluginFileInput
             extends InputStreamFileInput
-            implements TransactionalFileInput
-    {
+            implements TransactionalFileInput {
         private static class SingleFileProvider
-                implements InputStreamFileInput.Provider
-        {
+                implements InputStreamFileInput.Provider {
             private final InputStream stream;
             private boolean opened = false;
 
-            public SingleFileProvider(InputStream stream)
-            {
+            public SingleFileProvider(InputStream stream) {
                 this.stream = stream;
             }
 
             @Override
-            public InputStream openNext() throws IOException
-            {
+            public InputStream openNext() throws IOException {
                 if (opened) {
                     return null;
                 }
@@ -225,29 +208,29 @@ public class CommandFileInputPlugin
             }
 
             @Override
-            public void close() throws IOException
-            {
+            public void close() throws IOException {
                 if (!opened) {
                     stream.close();
                 }
             }
         }
 
-        public PluginFileInput(PluginTask task, InputStream stream)
-        {
+        public PluginFileInput(PluginTask task, InputStream stream) {
             super(Exec.getBufferAllocator(), new SingleFileProvider(stream));
         }
 
-        public void abort() { }
+        public void abort() {
+        }
 
-        public TaskReport commit()
-        {
+        public TaskReport commit() {
             return CONFIG_MAPPER_FACTORY.newTaskReport();
         }
 
         @Override
-        public void close() { }
+        public void close() {
+        }
     }
+
     private static final Logger logger = LoggerFactory.getLogger(CommandFileInputPlugin.class);
 
     private static final ConfigMapperFactory CONFIG_MAPPER_FACTORY = ConfigMapperFactory.builder().addDefaultModules().build();
