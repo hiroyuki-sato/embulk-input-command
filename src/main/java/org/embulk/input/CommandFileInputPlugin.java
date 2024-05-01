@@ -1,28 +1,29 @@
 package org.embulk.input;
 
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.ArrayList;
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.FilterInputStream;
 import org.slf4j.Logger;
-import com.google.common.base.Optional;
-import com.google.common.collect.ImmutableList;
-import com.google.common.base.Throwables;
 import org.embulk.config.TaskReport;
-import org.embulk.config.Config;
-import org.embulk.config.ConfigDefault;
+import org.embulk.util.config.Config;
+import org.embulk.util.config.ConfigDefault;
+import org.embulk.util.config.ConfigMapper;
+import org.embulk.util.config.ConfigMapperFactory;
+import org.embulk.util.config.Task;
+import org.embulk.util.config.TaskMapper;
 import org.embulk.config.ConfigDiff;
-import org.embulk.config.ConfigInject;
 import org.embulk.config.ConfigSource;
 import org.embulk.config.ConfigException;
-import org.embulk.config.Task;
 import org.embulk.config.TaskSource;
-import org.embulk.spi.BufferAllocator;
 import org.embulk.spi.Exec;
 import org.embulk.spi.FileInputPlugin;
 import org.embulk.spi.TransactionalFileInput;
-import org.embulk.spi.util.InputStreamFileInput;
+import org.embulk.util.file.InputStreamFileInput;
+import org.slf4j.LoggerFactory;
 
 public class CommandFileInputPlugin
         implements FileInputPlugin
@@ -37,21 +38,18 @@ public class CommandFileInputPlugin
         @ConfigDefault("\"stdout\"")
         public String getPipe();
 
-        @ConfigInject
-        public BufferAllocator getBufferAllocator();
     }
 
-    public static final List<String> SHELL = ImmutableList.of(
+    public static final List<String> SHELL = Collections.unmodifiableList(Arrays.asList(
         // TODO use ["PowerShell.exe", "-Command"] on windows?
         "sh", "-c"
-    );
-
-    private final Logger logger = Exec.getLogger(getClass());
+    ));
 
     @Override
     public ConfigDiff transaction(ConfigSource config, FileInputPlugin.Control control)
     {
-        PluginTask task = config.loadConfig(PluginTask.class);
+        final ConfigMapper configMapper = CONFIG_MAPPER_FACTORY.createConfigMapper();
+        final PluginTask task = configMapper.map(config, PluginTask.class);
 
         switch (task.getPipe()) {
         case "stdout":
@@ -63,7 +61,7 @@ public class CommandFileInputPlugin
                         "Unknown 'pipe' option '%s'. It must be either 'stdout' or 'stderr'", task.getPipe()));
         }
 
-        return resume(task.dump(), 1, control);
+        return resume(task.toTaskSource(), 1, control);
     }
 
     @Override
@@ -72,7 +70,8 @@ public class CommandFileInputPlugin
             FileInputPlugin.Control control)
     {
         control.run(taskSource, taskCount);
-        return Exec.newConfigDiff();
+
+        return CONFIG_MAPPER_FACTORY.newConfigDiff();
     }
 
     @Override
@@ -85,7 +84,8 @@ public class CommandFileInputPlugin
     @Override
     public TransactionalFileInput open(TaskSource taskSource, int taskIndex)
     {
-        PluginTask task = taskSource.loadTask(PluginTask.class);
+        final TaskMapper taskMapper = CONFIG_MAPPER_FACTORY.createTaskMapper();
+        final PluginTask task = taskMapper.map(taskSource, PluginTask.class);
 
         List<String> cmdline = new ArrayList<String>();
         cmdline.addAll(SHELL);
@@ -127,7 +127,7 @@ public class CommandFileInputPlugin
                 }
             }
         } catch (IOException ex) {
-            throw Throwables.propagate(ex);
+            throw new RuntimeException(ex);
         }
     }
 
@@ -186,7 +186,7 @@ public class CommandFileInputPlugin
                 try {
                     code = process.waitFor();
                 } catch (InterruptedException ex) {
-                    throw Throwables.propagate(ex);
+                    throw new RuntimeException(ex);
                 }
                 process = null;
                 if (code != 0) {
@@ -205,7 +205,7 @@ public class CommandFileInputPlugin
         private static class SingleFileProvider
                 implements InputStreamFileInput.Provider
         {
-            private InputStream stream;
+            private final InputStream stream;
             private boolean opened = false;
 
             public SingleFileProvider(InputStream stream)
@@ -234,17 +234,20 @@ public class CommandFileInputPlugin
 
         public PluginFileInput(PluginTask task, InputStream stream)
         {
-            super(task.getBufferAllocator(), new SingleFileProvider(stream));
+            super(Exec.getBufferAllocator(), new SingleFileProvider(stream));
         }
 
         public void abort() { }
 
         public TaskReport commit()
         {
-            return Exec.newTaskReport();
+            return CONFIG_MAPPER_FACTORY.newTaskReport();
         }
 
         @Override
         public void close() { }
     }
+    private static final Logger logger = LoggerFactory.getLogger(CommandFileInputPlugin.class);
+
+    private static final ConfigMapperFactory CONFIG_MAPPER_FACTORY = ConfigMapperFactory.builder().addDefaultModules().build();
 }
